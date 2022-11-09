@@ -22,7 +22,7 @@ import java.util.concurrent.CancellationException
 import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 
-class ListFragment() : Fragment(), CoroutineScope {
+class ListFragment() : Fragment() {
 
     //3) Сделать 2 варианта!!! Используя SupervisorJob и в обычной джобе,
     // запустить корутину через async, сделать паузу корутине на 1000 мс,
@@ -31,10 +31,6 @@ class ListFragment() : Fragment(), CoroutineScope {
     private lateinit var binding: FragmentListBinding
     private var list = mutableListOf<Animal>()
     private val adapter = AnimalAdapter()
-    private val job = SupervisorJob()
-
-    override val coroutineContext: CoroutineContext
-        get() = Dispatchers.Main + job
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -47,13 +43,15 @@ class ListFragment() : Fragment(), CoroutineScope {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        launch(coroutineContext) {
+        MainScope().launch(Dispatchers.Main) {
             firstRequest()
             setupRecyclerview()
 
             secondRequest()
             adapter.updateList(list)
         }
+
+
 
     }
 
@@ -69,42 +67,14 @@ class ListFragment() : Fragment(), CoroutineScope {
         Log.e("ttt", "firstRequest end")
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
-    suspend fun secondRequest() = coroutineScope {
-        Log.e("ttt", "secondRequest start")
-        val firstJob: Job = launch(newFixedThreadPoolContext(3, "pool")) {
-            repeat(3) {
-                try {
-                    delay(500L)
-                    val retrofitList = retrofitRequest()
-                    list.addAll(retrofitList)
-                    Log.e("ttt", "secondRequest end of try")
-
-                } catch (error: CancellationException) {
-                    Log.e("ttt", "secondRequest CancellationException")
-
-                } finally {
-
-                }
-            }
-        }
-        delay(2500L)
-        firstJob.cancelAndJoin()
-        Log.e("ttt", "secondRequest end")
-
-    }
-
     private fun retrofitRequest(): MutableList<Animal> {
         Log.e("ttt", "retrofitRequest start")
-
         return try {
             val service = Common.retrofitService
             val retrofitList: MutableList<Animal> =
                 service.getResponseItem().execute().body() as MutableList<Animal>
             Log.e("ttt", "retrofitRequest end")
-
             retrofitList
-
         } catch (err: Error) {
             Log.e("ttt", "Request error ${err.localizedMessage}")
             mutableListOf()
@@ -130,8 +100,27 @@ class ListFragment() : Fragment(), CoroutineScope {
 
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        coroutineContext.cancelChildren()
+    @OptIn(DelicateCoroutinesApi::class)
+    suspend fun secondRequest() = coroutineScope {
+        Log.e("ttt", "secondRequest start")
+        val firstJob: Job = launch(newFixedThreadPoolContext(3, "pool")) {
+            repeat(3) {
+                try {
+                    delay(500L)
+                    val retrofitList = retrofitRequest()
+                    list.addAll(retrofitList)
+                    Log.e("ttt", "secondRequest end of try")
+
+                } catch (error: CancellationException) {
+                    Log.e("ttt", "secondRequest CancellationException")
+
+                } finally {
+
+                }
+            }
+        }
+        delay(2000L)
+        firstJob.cancelAndJoin()
+        Log.e("ttt", "secondRequest end")
     }
 }
