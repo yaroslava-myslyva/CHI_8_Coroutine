@@ -46,6 +46,11 @@ class AnimalAdapter() : RecyclerView.Adapter<AnimalAdapter.AnimalViewHolder>() {
         this.items = list
     }
 
+    fun updateList(animalList: List<Animal>){
+        items = animalList
+        notifyDataSetChanged()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AnimalViewHolder {
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_fragment, parent, false)

@@ -6,6 +6,6 @@ import retrofit2.Response
 import retrofit2.http.GET
 
 interface RetrofitService {
-    @GET("/animals/rand/10/")
+    @GET("/animals/rand/1/")
     fun getResponseItem(): Call<List<Animal>>
 }

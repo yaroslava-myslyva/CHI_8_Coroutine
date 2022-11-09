@@ -6,22 +6,35 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.chi_8_coroutine.databinding.FragmentListBinding
 import com.example.chi_8_coroutine.network.Common
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.lang.reflect.Type
+import java.util.concurrent.CancellationException
 import kotlin.concurrent.thread
+import kotlin.coroutines.CoroutineContext
 
-class ListFragment : Fragment() {
+class ListFragment() : Fragment(), CoroutineScope {
+
+    //3) Сделать 2 варианта!!! Используя SupervisorJob и в обычной джобе,
+    // запустить корутину через async, сделать паузу корутине на 1000 мс,
+    // выбросить эксепшн и обработать его (вывести на экран ошибку загрузки)
 
     private lateinit var binding: FragmentListBinding
     private var list = mutableListOf<Animal>()
+    private val adapter = AnimalAdapter()
+    private val job = SupervisorJob()
+
+    override val coroutineContext: CoroutineContext
+        get() = Dispatchers.Main + job
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -34,45 +47,64 @@ class ListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        thread(start = true) {
-            val okHttpList = okHttpRequest()
-            val retrofitList = retrofitRequest()
+        launch(coroutineContext) {
+            firstRequest()
+            setupRecyclerview()
 
-            list.addAll(okHttpList)
-            list.addAll(retrofitList)
-            Log.d("ttt", "list size = ${list.size}")
-            activity?.runOnUiThread{
-                setupRecyclerview()
-            }
+            secondRequest()
+            adapter.updateList(list)
         }
+
     }
 
-    private fun okHttpRequest(): MutableList<Animal> {
-        return try {
-            val client = OkHttpClient()
-            val request: Request = Request.Builder()
-                .url(URL)
-                .build()
-            val response: Response = client.newCall(request).execute()
-            val builder = GsonBuilder()
-            val gson = builder.create()
-            val animalListType: Type = object : TypeToken<ArrayList<Animal>?>() {}.type
+    // MainScope()
 
-            val okHttpList: MutableList<Animal> =
-                gson.fromJson(response.body?.string().toString(), animalListType)
-            okHttpList
-        } catch (err: Error) {
-            Log.e("ttt", "Request error ${err.localizedMessage}")
-            mutableListOf()
+    private suspend fun firstRequest() {
+        Log.e("ttt", "firstRequest start")
+
+        withContext(Dispatchers.IO) {
+            val retrofitList = retrofitRequest()
+            list.addAll(retrofitList)
         }
+        Log.e("ttt", "firstRequest end")
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    suspend fun secondRequest() = coroutineScope {
+        Log.e("ttt", "secondRequest start")
+        val firstJob: Job = launch(newFixedThreadPoolContext(3, "pool")) {
+            repeat(3) {
+                try {
+                    delay(500L)
+                    val retrofitList = retrofitRequest()
+                    list.addAll(retrofitList)
+                    Log.e("ttt", "secondRequest end of try")
+
+                } catch (error: CancellationException) {
+                    Log.e("ttt", "secondRequest CancellationException")
+
+                } finally {
+
+                }
+            }
+        }
+        delay(2500L)
+        firstJob.cancelAndJoin()
+        Log.e("ttt", "secondRequest end")
+
     }
 
     private fun retrofitRequest(): MutableList<Animal> {
+        Log.e("ttt", "retrofitRequest start")
+
         return try {
             val service = Common.retrofitService
             val retrofitList: MutableList<Animal> =
                 service.getResponseItem().execute().body() as MutableList<Animal>
+            Log.e("ttt", "retrofitRequest end")
+
             retrofitList
+
         } catch (err: Error) {
             Log.e("ttt", "Request error ${err.localizedMessage}")
             mutableListOf()
@@ -80,7 +112,8 @@ class ListFragment : Fragment() {
     }
 
     private fun setupRecyclerview() {
-        val adapter = AnimalAdapter()
+        Log.e("ttt", "setupRecyclerview start")
+
         adapter.setItems(list)
         binding.animalsList.adapter = adapter
         binding.animalsList.run {
@@ -93,10 +126,12 @@ class ListFragment : Fragment() {
                 )
             )
         }
+        Log.e("ttt", "setupRecyclerview end")
+
     }
 
-    companion object {
-        private const val URL = "https://zoo-animal-api.herokuapp.com/animals/rand/10/"
+    override fun onDestroy() {
+        super.onDestroy()
+        coroutineContext.cancelChildren()
     }
-
 }
