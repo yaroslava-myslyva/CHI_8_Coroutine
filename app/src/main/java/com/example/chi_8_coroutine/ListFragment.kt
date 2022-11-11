@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DividerItemDecoration
@@ -24,13 +25,11 @@ import kotlin.coroutines.CoroutineContext
 
 class ListFragment() : Fragment() {
 
-    //3) Сделать 2 варианта!!! Используя SupervisorJob и в обычной джобе,
-    // запустить корутину через async, сделать паузу корутине на 1000 мс,
-    // выбросить эксепшн и обработать его (вывести на экран ошибку загрузки)
-
     private lateinit var binding: FragmentListBinding
     private var list = mutableListOf<Animal>()
     private val adapter = AnimalAdapter()
+    private val TAG = "ttt"
+
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -40,8 +39,11 @@ class ListFragment() : Fragment() {
         return binding.root
     }
 
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        val job = Job()
+        val supervisorJob = SupervisorJob()
 
         MainScope().launch(Dispatchers.Main) {
             firstRequest()
@@ -49,41 +51,31 @@ class ListFragment() : Fragment() {
 
             secondRequest()
             adapter.updateList(list)
+            loadData(CoroutineScope(Dispatchers.Main + job))
+            loadData(CoroutineScope(Dispatchers.Main + supervisorJob))
         }
-
-
-
     }
 
-    // MainScope()
-
     private suspend fun firstRequest() {
-        Log.e("ttt", "firstRequest start")
-
         withContext(Dispatchers.IO) {
             val retrofitList = retrofitRequest()
             list.addAll(retrofitList)
         }
-        Log.e("ttt", "firstRequest end")
     }
 
     private fun retrofitRequest(): MutableList<Animal> {
-        Log.e("ttt", "retrofitRequest start")
         return try {
             val service = Common.retrofitService
             val retrofitList: MutableList<Animal> =
                 service.getResponseItem().execute().body() as MutableList<Animal>
-            Log.e("ttt", "retrofitRequest end")
             retrofitList
         } catch (err: Error) {
-            Log.e("ttt", "Request error ${err.localizedMessage}")
+            Log.e(TAG, "Request error ${err.localizedMessage}")
             mutableListOf()
         }
     }
 
     private fun setupRecyclerview() {
-        Log.e("ttt", "setupRecyclerview start")
-
         adapter.setItems(list)
         binding.animalsList.adapter = adapter
         binding.animalsList.run {
@@ -96,31 +88,39 @@ class ListFragment() : Fragment() {
                 )
             )
         }
-        Log.e("ttt", "setupRecyclerview end")
-
     }
 
     @OptIn(DelicateCoroutinesApi::class)
     suspend fun secondRequest() = coroutineScope {
-        Log.e("ttt", "secondRequest start")
         val firstJob: Job = launch(newFixedThreadPoolContext(3, "pool")) {
             repeat(3) {
-                try {
-                    delay(500L)
-                    val retrofitList = retrofitRequest()
-                    list.addAll(retrofitList)
-                    Log.e("ttt", "secondRequest end of try")
+                launch {
+                    try {
+                        delay(500L)
+                        val retrofitList = retrofitRequest()
+                        list.addAll(retrofitList)
+                        Log.d(TAG, "secondRequest ${Thread.currentThread()}")
+                    } catch (error: CancellationException) {
+                        Log.e(TAG, "secondRequest CancellationException")
 
-                } catch (error: CancellationException) {
-                    Log.e("ttt", "secondRequest CancellationException")
+                    } finally {
 
-                } finally {
-
+                    }
                 }
             }
         }
         delay(2000L)
         firstJob.cancelAndJoin()
-        Log.e("ttt", "secondRequest end")
+    }
+
+    private suspend fun loadData(scope: CoroutineScope) = scope.launch {
+        async {
+            try {
+                delay(1000L)
+                throw Exception()
+            } catch (error: Exception) {
+                Toast.makeText(activity, "Failed download", Toast.LENGTH_SHORT).show()
+            }
+        }.await()
     }
 }
